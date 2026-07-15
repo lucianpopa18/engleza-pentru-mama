@@ -251,9 +251,9 @@ const CURRICULUM = [
         titlu: "Alfabetul și sunetele englezei",
         subtitlu: "De ce engleza nu se citește cum se scrie",
         explicatie: [
-          "În română, citim exact ce scriem. În engleză, NU — aceeași literă se poate citi în mai multe feluri. Nu te speria: nu trebuie să înveți reguli complicate, ci să asculți mult și să reții cuvintele cu tot cu sunetul lor.",
-          "Cele mai importante sunete noi pentru un român: „TH” (limba între dinți, ca un „t” suflat sau un „d” moale), „W” (ca un „u” scurt, nu ca „v”) și „EE” (un „i” lung).",
-          "Sfatul cel mai bun: la fiecare cuvânt nou, apasă pe 🔊 și repetă cu voce tare de 3 ori. Urechea învață înaintea ochilor.",
+          "În română, citim aproape exact ce scriem. În engleză, aceeași literă poate suna diferit. Este normal să pară ciudat la început.",
+          "TH: pune limba ușor între dinți și suflă. W: spune un «u» scurt, nu un «v». EE: prelungește sunetul «i».",
+          "Nu încerca să memorezi totul dintr-o dată. Ascultă fiecare cuvânt, repetă-l de 3 ori și încearcă să copiezi sunetul.",
         ],
         exemple: [
           { en: "think", fon: "tinc (cu limba între dinți)", ro: "a gândi" },
@@ -1288,6 +1288,79 @@ function Antet({ titlu, inapoi }) {
   );
 }
 
+
+const TIPURI_CARD_LECTIE = [
+  { eticheta: "Ideea principală", icon: "💡", fundal: "#EEF8F6" },
+  { eticheta: "Ține minte", icon: "🧠", fundal: "#F3F1FB" },
+  { eticheta: "Cum o folosești", icon: "✨", fundal: "#FFF7E8" },
+  { eticheta: "Un pas mai departe", icon: "🌿", fundal: "#F2F7FF" },
+];
+
+function fragmenteazaText(text) {
+  const parti = text
+    .split(/(?<=[.!?])\s+(?=[A-ZĂÂÎȘȚ„])/u)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return parti.length > 1 ? parti : [text];
+}
+
+function CardInvatare({ text, index, culoare }) {
+  const tip = TIPURI_CARD_LECTIE[index % TIPURI_CARD_LECTIE.length];
+  const fragmente = fragmenteazaText(text);
+  return (
+    <section
+      style={{
+        background: tip.fundal,
+        border: `1px solid ${culoare}24`,
+        borderRadius: 18,
+        padding: "17px 17px 16px",
+        boxShadow: "0 2px 8px rgba(15,109,116,0.05)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 10 }}>
+        <div
+          aria-hidden="true"
+          style={{
+            width: 34, height: 34, borderRadius: 11, background: "#fff",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 17, boxShadow: "0 1px 5px rgba(15,109,116,0.08)", flexShrink: 0,
+          }}
+        >
+          {tip.icon}
+        </div>
+        <div style={{ fontFamily: fN, fontWeight: 900, fontSize: 14, color: culoare, textTransform: "uppercase", letterSpacing: .7 }}>
+          {tip.eticheta}
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {fragmente.map((fragment, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
+            {fragmente.length > 1 && (
+              <span aria-hidden="true" style={{ color: culoare, fontWeight: 900, lineHeight: 1.55 }}>•</span>
+            )}
+            <div style={{ fontFamily: fN, fontSize: 17, color: "#2B4448", lineHeight: 1.55, fontWeight: 700 }}>
+              {fragment}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function BaraProgresLectie({ total }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+      <div style={{ flex: 1, height: 7, borderRadius: 999, background: "#DCEBEC", overflow: "hidden" }}>
+        <div style={{ width: "100%", height: "100%", borderRadius: 999, background: C.cernealaDeschis }} />
+      </div>
+      <div style={{ fontFamily: fN, fontSize: 13, fontWeight: 900, color: C.textSecundar, whiteSpace: "nowrap" }}>
+        {total} idei scurte
+      </div>
+    </div>
+  );
+}
+
 function ExempluRand({ f, culoare }) {
   return (
     <div style={{ background: "#F2F9F9", borderRadius: 14, padding: "13px 14px", display: "flex", alignItems: "center", gap: 10 }}>
@@ -1643,24 +1716,40 @@ export default function App() {
         {ecran === "curriculum" && nivelSel && lectieSel && !quiz && (
           <div>
             <Antet titlu={lectieSel.titlu} inapoi={() => setLectieSel(null)} />
-            <div style={{ background: C.hartie, borderRadius: 20, padding: "22px 20px", boxShadow: "0 2px 10px rgba(15,109,116,0.08)" }}>
-              <div style={{ fontFamily: fC, fontSize: 24, color: nivelSel.culoare }}>{lectieSel.subtitlu}</div>
+            <BaraProgresLectie total={lectieSel.explicatie.length} />
 
-              {lectieSel.explicatie.map((p, i) => (
-                <p key={i} style={{ fontFamily: fN, fontSize: 17, color: "#2B4448", lineHeight: 1.55, fontWeight: 600, margin: "14px 0 0" }}>{p}</p>
-              ))}
+            <div style={{ background: C.hartie, borderRadius: 22, padding: "20px 16px", boxShadow: "0 2px 10px rgba(15,109,116,0.08)" }}>
+              <div style={{ fontFamily: fC, fontSize: 26, lineHeight: 1.15, color: nivelSel.culoare, marginBottom: 16 }}>
+                {lectieSel.subtitlu}
+              </div>
 
-              <div style={{ fontFamily: fN, fontWeight: 900, fontSize: 16, color: C.cerneala, margin: "22px 0 10px", textTransform: "uppercase", letterSpacing: 1 }}>
-                Exemple — ascultă-le 🔊
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {lectieSel.explicatie.map((p, i) => (
+                  <CardInvatare key={i} text={p} index={i} culoare={nivelSel.culoare} />
+                ))}
+              </div>
+
+              <div style={{ margin: "24px 0 11px" }}>
+                <div style={{ fontFamily: fN, fontWeight: 900, fontSize: 18, color: C.cerneala }}>
+                  Ascultă și repetă
+                </div>
+                <div style={{ fontFamily: fN, fontSize: 14, color: C.textSecundar, fontWeight: 700, marginTop: 2 }}>
+                  Apasă pe difuzor și spune fiecare exemplu cu voce tare de 3 ori.
+                </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {lectieSel.exemple.map((f, i) => <ExempluRand key={i} f={f} culoare={nivelSel.culoare} />)}
               </div>
 
               {lectieSel.sfat && (
-                <div style={{ marginTop: 18, background: "#FFF6E5", borderRadius: 14, padding: "13px 15px", fontFamily: fN, fontSize: 15, fontWeight: 700, color: "#7A5A1E", lineHeight: 1.45 }}>
-                  💡 Sfat: {lectieSel.sfat}
-                </div>
+                <aside style={{ marginTop: 18, background: "#FFF7E8", border: "1px solid #F3DDAE", borderRadius: 17, padding: "15px 16px", color: "#6F531D" }}>
+                  <div style={{ fontFamily: fN, fontSize: 13, fontWeight: 900, textTransform: "uppercase", letterSpacing: .8, marginBottom: 5 }}>
+                    ⭐ Regula de aur
+                  </div>
+                  <div style={{ fontFamily: fN, fontSize: 16, fontWeight: 800, lineHeight: 1.5 }}>
+                    {lectieSel.sfat}
+                  </div>
+                </aside>
               )}
             </div>
 
