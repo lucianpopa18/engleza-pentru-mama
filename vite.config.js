@@ -4,6 +4,8 @@ import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
   base: "./",
+  // permite accesul prin Tailscale (MagicDNS *.ts.net) în timpul dezvoltării
+  server: { allowedHosts: [".ts.net"] },
   plugins: [
     react(),
     VitePWA({

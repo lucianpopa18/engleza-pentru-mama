@@ -1160,19 +1160,14 @@ function imbinaProgres(local, cloud) {
 }
 
 function mesajEroareAuth(e) {
-  const cod = (e && e.code) || "";
-  const mesaje = {
-    "auth/invalid-email": "Adresa de email nu pare corectă.",
-    "auth/user-not-found": "Nu există cont cu acest email. Apasă „Creează cont”.",
-    "auth/wrong-password": "Parola nu e corectă.",
-    "auth/invalid-credential": "Email sau parolă greșite.",
-    "auth/email-already-in-use": "Există deja un cont cu acest email. Apasă „Intră în cont”.",
-    "auth/weak-password": "Parola e prea scurtă — minim 6 caractere.",
-    "auth/requires-recent-login": "Din siguranță, deloghează-te, intră din nou, apoi reîncearcă ștergerea.",
-    "auth/popup-closed-by-user": "Fereastra Google a fost închisă înainte de final.",
-    "auth/network-request-failed": "Nu e conexiune la internet. Încearcă mai târziu.",
-  };
-  return mesaje[cod] || "Ceva n-a mers. Încearcă din nou.";
+  const cod = String((e && e.code) || "");
+  const msg = String((e && e.message) || "").toLowerCase();
+  const status = e && e.status;
+  if (cod.includes("invalid_credentials") || msg.includes("invalid login")) return "Utilizator sau parolă greșite.";
+  if (msg.includes("email not confirmed")) return "Contul nu e confirmat încă. Anunță-l pe cel care ți-a făcut contul.";
+  if (cod.includes("over_request_rate") || status === 429) return "Prea multe încercări. Așteaptă puțin și reîncearcă.";
+  if (msg.includes("failed to fetch") || msg.includes("network")) return "Nu e conexiune la internet. Încearcă mai târziu.";
+  return "Ceva n-a mers. Verifică utilizatorul și parola.";
 }
 
 // ================= AUDIO =================
@@ -1496,8 +1491,37 @@ export default function App() {
   const [cautaFraza, setCautaFraza] = useState("");
   const [favorite, setFavorite] = useState(dateSalvate.favorite || {}); // { "fraza en": true }
   const [lectiiCitite, setLectiiCitite] = useState(dateSalvate.lectiiCitite || {});
+  // Profesor AI (chat)
+  const [profMesaje, setProfMesaje] = useState([]); // { rol: "user" | "profesor", text }
+  const [profInput, setProfInput] = useState("");
+  const [profBusy, setProfBusy] = useState(false);
+  const [profMod, setProfMod] = useState("chat"); // "chat" | "corecteaza"
+  const [profDeschis, setProfDeschis] = useState(false); // fereastra de chat (pop-up global)
+  const profBodyRef = useRef(null);
 
   useEffect(() => { window.speechSynthesis?.getVoices(); }, []);
+  // auto-scroll la ultimul mesaj în fereastra profesorului
+  useEffect(() => { if (profDeschis && profBodyRef.current) profBodyRef.current.scrollTop = profBodyRef.current.scrollHeight; }, [profMesaje, profBusy, profDeschis]);
+
+  const trimiteProfesor = async (textDat) => {
+    const text = String(textDat != null ? textDat : profInput).trim();
+    if (!text || profBusy || !cloud) return;
+    const noua = [...profMesaje, { rol: "user", text }];
+    setProfMesaje(noua);
+    setProfInput("");
+    setProfBusy(true);
+    try {
+      const { data, error } = await cloud.client().functions.invoke("profesor", { body: { mod: profMod, mesaje: noua } });
+      if (error || !data || !data.ok) throw new Error((data && data.error) || "eroare");
+      // curăță eventualele asteriscuri markdown ca să nu apară brute
+      const curat = String(data.text).replace(/\*+/g, "");
+      setProfMesaje((prev) => [...prev, { rol: "profesor", text: curat }]);
+    } catch (e) {
+      setProfMesaje((prev) => [...prev, { rol: "profesor", text: "Nu am putut răspunde acum. Verifică internetul și încearcă din nou. 🙏" }]);
+    } finally {
+      setProfBusy(false);
+    }
+  };
 
   // Salvează automat progresul: local instant, în cloud cu mică întârziere (dacă e cont)
   useEffect(() => {
@@ -1528,7 +1552,7 @@ export default function App() {
       });
     };
     if (typeof window !== "undefined" && window.__cloudPentruTeste) { porneste(window.__cloudPentruTeste); return () => opreste(); }
-    import("./firebase.js")
+    import("./supabase.js")
       .then((m) => { if (m.esteConfigurat()) porneste(m); else setCloudStare("neconfigurat"); })
       .catch(() => setCloudStare("indisponibil"));
     return () => opreste();
@@ -1549,6 +1573,69 @@ export default function App() {
   const inapoiAcasa = () => { setEcran("acasa"); setPas(0); setRevIdx(0); setRevArata(false); setRevStiute(0); setNivelSel(null); setLectieSel(null); setQuiz(null); setGhidSel(null); setCautaVerb(""); setCategorie(null); setCautaFraza(""); setAuthMesaj(""); setConfirmaStergerea(false); };
   const totalCitite = Object.keys(lectiiCitite).length;
   const totalLectii = CURRICULUM.reduce((s, n) => s + n.lectii.length + (n.vocabular ? n.vocabular.length : 0), 0);
+
+  // ═══════ POARTĂ DE LOGIN ═══════
+  // Nicio pagină nu e accesibilă fără cont. Cât timp nu ești logat,
+  // se afișează DOAR ecranul de intrare (sau un mesaj dacă backend-ul lipsește).
+  if (cloudStare !== "gata" || !cont) {
+    const camp = { width: "100%", boxSizing: "border-box", minHeight: 56, borderRadius: 14, border: "2px solid #D6E7E8", padding: "0 16px", fontFamily: fN, fontWeight: 700, fontSize: 17, color: C.cerneala, background: C.hartie, outline: "none" };
+    const incearcaLogin = () => ruleazaAuth(() => cloud.intraEmail(authEmail.trim(), authParola));
+    return (
+      <div style={{ minHeight: "100vh", background: C.fundal, padding: "22px 16px 40px", boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <style>{stilFonturi}</style>
+        <div style={{ maxWidth: 380, width: "100%", margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 22 }}>
+            <img src="./icon-192.png" alt="" style={{ width: 84, height: 84, borderRadius: 22, boxShadow: "0 6px 18px rgba(15,109,116,0.2)" }} />
+            <div style={{ fontFamily: fC, fontSize: 26, color: C.cernealaDeschis, marginTop: 14 }}>caietul meu de engleză</div>
+            <div style={{ fontFamily: fN, fontWeight: 900, fontSize: 27, color: C.cerneala, marginTop: 2 }}>Bine ai venit! 👋</div>
+          </div>
+
+          {cloudStare === "se-verifica" && (
+            <div style={{ textAlign: "center", fontFamily: fN, fontWeight: 800, fontSize: 16, color: C.textSecundar, padding: "20px 0" }}>
+              Se verifică...
+            </div>
+          )}
+
+          {(cloudStare === "neconfigurat" || cloudStare === "indisponibil") && (
+            <div style={{ background: C.hartie, borderRadius: 20, padding: "22px 20px", boxShadow: "0 2px 10px rgba(15,109,116,0.08)", textAlign: "center" }}>
+              <div style={{ fontSize: 44 }}>☁️</div>
+              <div style={{ fontFamily: fN, fontWeight: 900, fontSize: 19, color: C.cerneala, marginTop: 8 }}>
+                {cloudStare === "neconfigurat" ? "Aplicația nu e conectată încă" : "Momentan nu ne putem conecta"}
+              </div>
+              <div style={{ fontFamily: fN, fontSize: 15, color: C.textSecundar, fontWeight: 700, marginTop: 8, lineHeight: 1.5 }}>
+                {cloudStare === "neconfigurat"
+                  ? "Urmează pașii „Supabase” din README pentru a activa conturile."
+                  : "Verifică internetul și reîncearcă în câteva momente."}
+              </div>
+            </div>
+          )}
+
+          {cloudStare === "gata" && !cont && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <input value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="Utilizator" autoCapitalize="none" autoCorrect="off" autoComplete="username" style={camp}
+                onKeyDown={(e) => { if (e.key === "Enter") incearcaLogin(); }} />
+              <input value={authParola} onChange={(e) => setAuthParola(e.target.value)} placeholder="Parolă" type="password" autoComplete="current-password" style={camp}
+                onKeyDown={(e) => { if (e.key === "Enter") incearcaLogin(); }} />
+              <BtnMare onClick={incearcaLogin}>Intră în cont</BtnMare>
+              {authMesaj && (
+                <div style={{ fontFamily: fN, fontWeight: 800, fontSize: 15, color: authMesaj === "..." ? C.textSecundar : C.rosuBland, textAlign: "center", marginTop: 4 }}>
+                  {authMesaj === "..." ? "Se conectează..." : authMesaj}
+                </div>
+              )}
+              <div style={{ fontFamily: fN, fontSize: 13.5, color: C.textSecundar, fontWeight: 700, textAlign: "center", marginTop: 6, lineHeight: 1.5 }}>
+                Contul îl primești de la cel care ți-a trimis aplicația. Progresul se salvează în cont, pe orice telefon.
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <button onClick={() => window.open("./privacy.html", "_blank")} style={{ background: "none", border: "none", color: C.cernealaDeschis, fontFamily: fN, fontWeight: 800, fontSize: 13.5, cursor: "pointer", textDecoration: "underline", marginTop: 8 }}>
+                  Politica de confidențialitate
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: C.fundal, padding: "22px 16px 40px", boxSizing: "border-box" }}>
@@ -1600,6 +1687,10 @@ export default function App() {
                 📖 Ghid rapid
                 <div style={{ fontSize: 15, fontWeight: 700, opacity: 0.85, marginTop: 3 }}>Verbe neregulate, timpuri, prepoziții</div>
               </BtnMare>
+              <BtnMare onClick={() => setProfDeschis(true)} culoare={C.cernealaDeschis} stil={{ minHeight: 80, fontSize: 21 }}>
+                🧑‍🏫 Profesorul meu
+                <div style={{ fontSize: 15, fontWeight: 700, opacity: 0.85, marginTop: 3 }}>Întreabă orice · corectează-ți propozițiile</div>
+              </BtnMare>
             </div>
 
             <button
@@ -1612,7 +1703,7 @@ export default function App() {
               onClick={() => setEcran("cont")}
               style={{ width: "100%", marginTop: 10, minHeight: 48, borderRadius: 14, border: "none", background: "transparent", color: C.textSecundar, fontFamily: fN, fontWeight: 800, fontSize: 15, cursor: "pointer" }}
             >
-              {cont ? `☁️ ${cont.email} · progres sincronizat` : "☁️ Contul meu — păstrează progresul în cloud"}
+              {cont ? `☁️ ${cont.username} · progres sincronizat` : "☁️ Contul meu"}
             </button>
           </div>
         )}
@@ -2230,7 +2321,7 @@ export default function App() {
                 <Antet titlu="Contul meu ☁️" inapoi={inapoiAcasa} />
                 <div style={{ background: C.hartie, borderRadius: 20, padding: "24px 20px", boxShadow: "0 2px 10px rgba(15,109,116,0.08)", textAlign: "center" }}>
                   <div style={{ fontSize: 48 }}>✅</div>
-                  <div style={{ fontFamily: fN, fontWeight: 900, fontSize: 19, color: C.cerneala, marginTop: 8, wordBreak: "break-all" }}>{cont.email}</div>
+                  <div style={{ fontFamily: fN, fontWeight: 900, fontSize: 19, color: C.cerneala, marginTop: 8, wordBreak: "break-all" }}>{cont.username}</div>
                   <div style={{ fontFamily: fN, fontSize: 15, color: C.verde, fontWeight: 800, marginTop: 6 }}>
                     ☁️ Progresul se sincronizează automat pe toate dispozitivele
                   </div>
@@ -2266,29 +2357,13 @@ export default function App() {
               </div>
             );
           }
+          // Fără cont nu se ajunge aici (poarta de login blochează accesul), dar păstrăm o cale sigură.
           return (
             <div>
               <Antet titlu="Contul meu ☁️" inapoi={inapoiAcasa} />
-              <div style={{ fontFamily: fN, fontSize: 15, color: C.textSecundar, fontWeight: 700, marginBottom: 14, lineHeight: 1.5 }}>
-                Cu un cont, progresul tău e păstrat în cloud: schimbi telefonul sau folosești tableta — caietul te așteaptă la fel. <b>Poți folosi aplicația și fără cont</b>, totul se salvează pe acest dispozitiv.
+              <div style={{ fontFamily: fN, fontSize: 15, color: C.textSecundar, fontWeight: 700, lineHeight: 1.5 }}>
+                Nu ești conectat. Revino la ecranul de intrare pentru a te loga.
               </div>
-              <BtnMare culoare="#FFFFFF" textCuloare={C.cerneala} stil={{ border: "2px solid #D6E7E8", boxShadow: "none" }} onClick={() => ruleazaAuth(() => cloud.intraGoogle())}>
-                Continuă cu Google
-              </BtnMare>
-              <div style={{ fontFamily: fN, fontWeight: 800, fontSize: 14, color: C.textSecundar, textAlign: "center", margin: "16px 0" }}>— sau cu email —</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <input value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="Email" type="email" autoComplete="email" style={camp} />
-                <input value={authParola} onChange={(e) => setAuthParola(e.target.value)} placeholder="Parolă (minim 6 caractere)" type="password" autoComplete="current-password" style={camp} />
-                <div style={{ display: "flex", gap: 10 }}>
-                  <BtnMare stil={{ flex: 1 }} onClick={() => ruleazaAuth(() => cloud.intraEmail(authEmail.trim(), authParola))}>Intră în cont</BtnMare>
-                  <BtnMare culoare={C.verde} stil={{ flex: 1 }} onClick={() => ruleazaAuth(() => cloud.creeazaCont(authEmail.trim(), authParola))}>Creează cont</BtnMare>
-                </div>
-              </div>
-              {authMesaj && (
-                <div style={{ fontFamily: fN, fontWeight: 800, fontSize: 15, color: authMesaj === "..." ? C.textSecundar : C.rosuBland, textAlign: "center", marginTop: 14 }}>
-                  {authMesaj === "..." ? "Se conectează..." : authMesaj}
-                </div>
-              )}
               <div style={{ textAlign: "center" }}>{politica}</div>
             </div>
           );
@@ -2390,6 +2465,97 @@ export default function App() {
           );
         })()}
       </div>
+
+      {/* ---------- PROFESOR: buton flotant + fereastră de chat (pe ORICE ecran) ---------- */}
+      {!profDeschis && (
+        <button onClick={() => setProfDeschis(true)} aria-label="Profesorul meu"
+          style={{ position: "fixed", right: 16, bottom: 16, width: 62, height: 62, borderRadius: "50%", border: "none",
+            background: C.cerneala, color: "#fff", fontSize: 28, cursor: "pointer", zIndex: 900,
+            boxShadow: "0 6px 20px rgba(15,109,116,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          🧑‍🏫
+        </button>
+      )}
+
+      {profDeschis && (() => {
+        const sugestii = ["Cum spun „mulțumesc frumos”?", "Corectează: I have 40 years", "Ce înseamnă „however”?"];
+        const camp = { flex: 1, boxSizing: "border-box", minHeight: 50, borderRadius: 14, border: "2px solid #D6E7E8", padding: "0 14px", fontFamily: fN, fontWeight: 700, fontSize: 16, color: C.cerneala, background: C.hartie, outline: "none" };
+        return (
+          <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(10,50,53,0.45)", display: "flex" }}>
+            <div style={{ background: C.fundal, width: "100%", maxWidth: 520, margin: "0 auto", height: "100%", display: "flex", flexDirection: "column", boxShadow: "0 0 40px rgba(0,0,0,0.25)" }}>
+              {/* header */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px 16px 12px", borderBottom: "1px solid #E1EDED" }}>
+                <div style={{ fontFamily: fN, fontWeight: 900, fontSize: 19, color: C.cerneala, flex: 1 }}>Profesorul meu 🧑‍🏫</div>
+                <button onClick={() => setProfDeschis(false)} aria-label="Închide"
+                  style={{ width: 42, height: 42, borderRadius: 12, border: "none", background: C.hartie, color: C.cerneala, fontSize: 24, fontWeight: 900, cursor: "pointer", boxShadow: "0 2px 6px rgba(15,109,116,0.12)", lineHeight: 1 }}>×</button>
+              </div>
+
+              {/* toggle mod */}
+              <div style={{ display: "flex", gap: 8, padding: "12px 16px 4px" }}>
+                {[["chat", "💬 Discuție"], ["corecteaza", "✍️ Corectează"]].map(([val, et]) => (
+                  <button key={val} onClick={() => setProfMod(val)}
+                    style={{ flex: 1, minHeight: 42, borderRadius: 12, border: "none", cursor: "pointer", fontFamily: fN, fontWeight: 800, fontSize: 15,
+                      background: profMod === val ? C.cerneala : C.hartie, color: profMod === val ? "#fff" : C.textSecundar, boxShadow: "0 2px 6px rgba(15,109,116,0.08)" }}>
+                    {et}
+                  </button>
+                ))}
+              </div>
+
+              {/* corp cu mesaje (scroll) */}
+              <div ref={profBodyRef} style={{ flex: 1, overflowY: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+                {profMesaje.length === 0 && (
+                  <div style={{ background: C.hartie, borderRadius: 18, padding: "18px", boxShadow: "0 2px 10px rgba(15,109,116,0.08)" }}>
+                    <div style={{ fontFamily: fN, fontWeight: 800, fontSize: 15.5, color: C.cerneala, lineHeight: 1.5 }}>
+                      {profMod === "corecteaza"
+                        ? "Scrie o propoziție în engleză și ți-o corectez blând, cu pronunția pe românește. ✍️"
+                        : "Întreabă-mă orice despre engleză — îți explic simplu, pe românește. 💬"}
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
+                      {sugestii.map((s) => (
+                        <button key={s} onClick={() => trimiteProfesor(s)}
+                          style={{ background: "#EEF8F6", border: "none", borderRadius: 20, padding: "9px 14px", fontFamily: fN, fontWeight: 800, fontSize: 13.5, color: C.cerneala, cursor: "pointer" }}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {profMesaje.map((m, i) => (
+                  <div key={i} style={{ alignSelf: m.rol === "user" ? "flex-end" : "flex-start", maxWidth: "88%",
+                    background: m.rol === "user" ? C.cerneala : C.hartie, color: m.rol === "user" ? "#fff" : C.cerneala,
+                    borderRadius: 18, borderBottomRightRadius: m.rol === "user" ? 4 : 18, borderBottomLeftRadius: m.rol === "user" ? 18 : 4,
+                    padding: "12px 15px", fontFamily: fN, fontWeight: 600, fontSize: 15.5, lineHeight: 1.55, whiteSpace: "pre-wrap",
+                    boxShadow: "0 2px 8px rgba(15,109,116,0.08)" }}>
+                    {m.text}
+                  </div>
+                ))}
+                {profBusy && (
+                  <div style={{ alignSelf: "flex-start", background: C.hartie, borderRadius: 18, padding: "12px 15px", fontFamily: fN, fontWeight: 800, fontSize: 15, color: C.textSecundar, boxShadow: "0 2px 8px rgba(15,109,116,0.08)" }}>
+                    Profesorul scrie… ✍️
+                  </div>
+                )}
+              </div>
+
+              {/* bara de input */}
+              <div style={{ padding: "10px 16px 14px", borderTop: "1px solid #E1EDED", background: C.fundal }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={profInput} onChange={(e) => setProfInput(e.target.value)}
+                    placeholder={profMod === "corecteaza" ? "Scrie propoziția în engleză..." : "Scrie întrebarea ta..."}
+                    autoCapitalize="sentences" style={camp}
+                    onKeyDown={(e) => { if (e.key === "Enter") trimiteProfesor(); }} />
+                  <button onClick={() => trimiteProfesor()} disabled={profBusy || !profInput.trim()}
+                    style={{ minWidth: 58, borderRadius: 14, border: "none", cursor: profBusy || !profInput.trim() ? "default" : "pointer",
+                      background: profBusy || !profInput.trim() ? "#BFD9DB" : C.cerneala, color: "#fff", fontFamily: fN, fontWeight: 900, fontSize: 20 }}>
+                    ➤
+                  </button>
+                </div>
+                <div style={{ fontFamily: fN, fontSize: 12, color: C.textSecundar, fontWeight: 700, textAlign: "center", marginTop: 8 }}>
+                  Profesorul e un AI — poate greși uneori. Are nevoie de internet.
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

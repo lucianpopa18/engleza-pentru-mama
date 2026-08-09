@@ -63,51 +63,51 @@ Când primești o versiune nouă a fișierului `App.jsx`:
 
 ---
 
-## ☁️ Activarea conturilor și sincronizării (opțional, ~15 minute)
+## ☁️ Conturi + sincronizare (Supabase) — OBLIGATORIU
 
-Aplicația merge perfect și fără acest pas — progresul se salvează pe dispozitiv.
-Conturile aduc: sincronizare între dispozitive + fundația pentru monetizare.
+Aplicația cere **login** pentru a intra (nicio pagină nu e accesibilă fără cont).
+Conturile le creezi TU și le trimiți utilizatorilor. Progresul se salvează în cont și
+se sincronizează pe orice telefon/tabletă.
 
-**Pasul 1 — Proiectul Firebase (gratuit)**
-1. Intră pe [console.firebase.google.com](https://console.firebase.google.com) cu contul tău Google.
-2. **Add project** → nume (ex: `caietul-de-engleza`) → poți dezactiva Analytics → **Create**.
+**Pasul 1 — Proiectul Supabase (gratuit)**
+1. Intră pe [supabase.com](https://supabase.com) → **New project**.
+2. Nume `engleza-pentru-mama`, regiune **Europe (Frankfurt)**, alege o parolă de DB (salvează-o).
 
-**Pasul 2 — Autentificarea**
-1. În meniul stâng: **Build → Authentication → Get started**.
-2. Activează **Email/Password** (Enable → Save).
-3. Activează **Google** (Enable → alege emailul de suport → Save).
-4. Fila **Settings → Authorized domains → Add domain** → adaugă:
-   `NUMELE-TĂU.github.io`
+**Pasul 2 — Baza de date**
+1. **SQL Editor** → New query → lipește conținutul din `supabase/schema.sql` → **Run**.
+   (Creează tabelul `progres` + regulile RLS: fiecare vede doar datele lui.)
 
-**Pasul 3 — Baza de date**
-1. **Build → Firestore Database → Create database** → *Start in production mode* → alege
-   regiunea `europe-west` → **Create**.
-2. Fila **Rules** → înlocuiește totul cu regulile de mai jos → **Publish**:
+**Pasul 3 — Auth (doar tu faci conturi)**
+1. **Authentication → Providers → Email** = activat.
+2. **Authentication → Settings** → „Allow new users to sign up" = **OFF** (nimeni nu-și face singur cont).
 
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /utilizatori/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-    }
-  }
-}
-```
-*(Traducere: fiecare utilizator își poate citi și scrie doar propriile date.)*
+**Pasul 4 — Cheile aplicației (publice)**
+1. **Project Settings → API** → copiază **Project URL** și **anon / publishable key**.
+2. Deschide `src/supabase-config.js` și lipește-le peste exemple. Commit → GitHub reconstruiește. ✅
 
-**Pasul 4 — Cheile aplicației**
-1. **Project settings** (rotița de sus) → secțiunea *Your apps* → iconița **</>** (Web).
-2. Dă-i un nume → **Register app** → copiază obiectul `firebaseConfig` afișat.
-3. Deschide `src/firebase-config.js` din acest proiect și lipește valorile tale peste
-   cele de exemplu. Commit → GitHub reconstruiește → conturile sunt live. ✅
+**Pasul 5 — Creezi conturi pentru utilizatori**
+1. Fă un fișier `.env.local` în rădăcină cu (din **Project Settings → API**):
+   ```
+   SUPABASE_URL=https://xxxx.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=eyJ...   ← cheia service_role (SECRETĂ, rămâne doar la tine)
+   ```
+2. Rulează: `node scripts/creeaza-cont.mjs maria Parola123`
+3. Trimite-i utilizatorului: **user = maria**, **parola = Parola123**.
 
-**Pasul 5 — GDPR (obligatoriu când ai utilizatori reali)**
+**Pasul 6 — Profesorul AI (opțional, dar recomandat)**
+1. Ia o cheie API de pe [ollama.com](https://ollama.com) (Settings → Keys).
+2. Instalează Supabase CLI, apoi din proiect:
+   ```
+   supabase functions deploy profesor
+   supabase secrets set OLLAMA_API_KEY=cheia_ta
+   ```
+   (opțional `OLLAMA_MODEL=gpt-oss:120b-cloud`, `OLLAMA_BASE=https://ollama.com`)
+
+**Pasul 7 — GDPR**
 Deschide `public/privacy.html` și completează `[NUMELE TĂU]` și `[EMAILUL TĂU]` la Contact.
-Politica e deja legată în aplicație, iar ștergerea contului există în ecranul „Contul meu”.
 
-> 💡 Cheile din `firebase-config.js` sunt **publice prin design** (așa funcționează Firebase
-> pe web) — securitatea reală o fac regulile Firestore de la Pasul 3.
+> 💡 URL-ul + anon key din `supabase-config.js` sunt **publice prin design** — securitatea
+> reală o fac regulile RLS (Pasul 2). Cheia `service_role` NU intră niciodată în aplicație.
 
 ---
 
@@ -122,13 +122,16 @@ npm run build   # construiește versiunea de producție în /dist
 ## 📂 Structura
 
 ```
-├── src/App.jsx           ← TOATĂ aplicația e aici (singurul fișier de modificat)
-├── src/firebase.js       ← stratul de conturi & sincronizare (nu se atinge)
-├── src/firebase-config.js← cheile TALE Firebase (vezi secțiunea ☁️)
-├── src/main.jsx          ← pornirea React (nu se atinge)
-├── index.html         ← pagina + setările pentru iPhone (nu se atinge)
-├── vite.config.js     ← configurarea PWA: nume, iconițe, offline (rar de atins)
-├── public/            ← iconițele aplicației
-├── public/privacy.html   ← politica de confidențialitate (completează contactul)
-└── .github/workflows/    ← publicarea automată pe GitHub Pages
+├── src/App.jsx            ← TOATĂ interfața e aici (lecții, exerciții, profesor, login)
+├── src/supabase.js        ← stratul de conturi & sincronizare (nu se atinge)
+├── src/supabase-config.js ← URL + anon key ale TALE (vezi secțiunea ☁️)
+├── src/main.jsx           ← pornirea React (nu se atinge)
+├── supabase/schema.sql    ← baza de date + RLS (rulezi o dată în SQL Editor)
+├── supabase/functions/profesor/ ← funcția AI (proxy sigur către Ollama Cloud)
+├── scripts/creeaza-cont.mjs ← creezi conturi pentru utilizatori (rulezi local)
+├── index.html          ← pagina + setările pentru iPhone (nu se atinge)
+├── vite.config.js      ← configurarea PWA: nume, iconițe, offline (rar de atins)
+├── public/             ← iconițele aplicației
+├── public/privacy.html    ← politica de confidențialitate (completează contactul)
+└── .github/workflows/     ← publicarea automată pe GitHub Pages
 ```
