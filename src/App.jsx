@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { VOCABULAR_500 } from "./vocabular500.js";
 
 // ================= DATE: LECȚIILE ZILNICE (rotație pe zile) =================
 const LECTII_ZILNICE = [
@@ -1155,6 +1156,7 @@ function imbinaProgres(local, cloud) {
     puterea,
     zileLectie: { ...(b.zileLectie || {}), ...(a.zileLectie || {}) },
     favorite: { ...(b.favorite || {}), ...(a.favorite || {}) },
+    favVocab: { ...(b.favVocab || {}), ...(a.favVocab || {}) },
     zileVizitate: [...new Set([...(a.zileVizitate || []), ...(b.zileVizitate || [])])].sort(),
   };
 }
@@ -1490,6 +1492,9 @@ export default function App() {
   const [cautaVerb, setCautaVerb] = useState("");
   const [cautaFraza, setCautaFraza] = useState("");
   const [favorite, setFavorite] = useState(dateSalvate.favorite || {}); // { "fraza en": true }
+  const [favVocab, setFavVocab] = useState(dateSalvate.favVocab || {}); // { "cuvant en": true }
+  const [vocFiltru, setVocFiltru] = useState("toate"); // "toate" | "favorite"
+  const [cautaVocab, setCautaVocab] = useState("");
   const [lectiiCitite, setLectiiCitite] = useState(dateSalvate.lectiiCitite || {});
   // Profesor AI (chat)
   const [profMesaje, setProfMesaje] = useState([]); // { rol: "user" | "profesor", text }
@@ -1525,14 +1530,14 @@ export default function App() {
 
   // Salvează automat progresul: local instant, în cloud cu mică întârziere (dacă e cont)
   useEffect(() => {
-    const date = { invatate, lectiiCitite, puterea, zileLectie, favorite, zileVizitate };
+    const date = { invatate, lectiiCitite, puterea, zileLectie, favorite, favVocab, zileVizitate };
     progresRef.current = date;
     stocare.scrie(date);
     if (cont && cloud) {
       clearTimeout(timerCloud.current);
       timerCloud.current = setTimeout(() => { cloud.salveazaProgres(cont.uid, date).catch(() => {}); }, 1500);
     }
-  }, [invatate, lectiiCitite, puterea, zileLectie, favorite, zileVizitate, cont, cloud]);
+  }, [invatate, lectiiCitite, puterea, zileLectie, favorite, favVocab, zileVizitate, cont, cloud]);
 
   // Conectarea la cloud (Firebase) — opțională: fără ea, aplicația merge normal, doar local
   useEffect(() => {
@@ -1546,7 +1551,7 @@ export default function App() {
           try { dinCloud = await m.incarcaProgres(u.uid); } catch (e) {}
           const imbinat = imbinaProgres(progresRef.current, dinCloud);
           setInvatate(imbinat.invatate); setLectiiCitite(imbinat.lectiiCitite); setPuterea(imbinat.puterea);
-          setZileLectie(imbinat.zileLectie); setFavorite(imbinat.favorite); setZileVizitate(imbinat.zileVizitate);
+          setZileLectie(imbinat.zileLectie); setFavorite(imbinat.favorite); setFavVocab(imbinat.favVocab); setZileVizitate(imbinat.zileVizitate);
           m.salveazaProgres(u.uid, imbinat).catch(() => {});
         }
       });
@@ -1570,7 +1575,13 @@ export default function App() {
     setRevIdx(0); setRevStiute(0); setRevArata(false);
     setEcran("repeta");
   };
-  const inapoiAcasa = () => { setEcran("acasa"); setPas(0); setRevIdx(0); setRevArata(false); setRevStiute(0); setNivelSel(null); setLectieSel(null); setQuiz(null); setGhidSel(null); setCautaVerb(""); setCategorie(null); setCautaFraza(""); setAuthMesaj(""); setConfirmaStergerea(false); };
+  const inapoiAcasa = () => { setEcran("acasa"); setPas(0); setRevIdx(0); setRevArata(false); setRevStiute(0); setNivelSel(null); setLectieSel(null); setQuiz(null); setGhidSel(null); setCautaVerb(""); setCategorie(null); setCautaFraza(""); setCautaVocab(""); setVocFiltru("toate"); setAuthMesaj(""); setConfirmaStergerea(false); };
+  const nrFavVocab = Object.values(favVocab).filter(Boolean).length;
+  const peSteaVocab = (w) => setFavVocab((prev) => {
+    const urm = { ...prev };
+    if (urm[w.en]) delete urm[w.en]; else urm[w.en] = true;
+    return urm;
+  });
   const totalCitite = Object.keys(lectiiCitite).length;
   const totalLectii = CURRICULUM.reduce((s, n) => s + n.lectii.length + (n.vocabular ? n.vocabular.length : 0), 0);
 
@@ -1682,6 +1693,12 @@ export default function App() {
               <BtnMare onClick={() => setEcran("fraze")} culoare={C.galben} textCuloare="#4A3208" stil={{ minHeight: 80, fontSize: 21 }}>
                 💬 Fraze utile
                 <div style={{ fontSize: 15, fontWeight: 700, opacity: 0.85, marginTop: 3 }}>94 de fraze pe situații + căutare</div>
+              </BtnMare>
+              <BtnMare onClick={() => setEcran("vocabular")} culoare={C.turcoaz} textCuloare={C.cerneala} stil={{ minHeight: 80, fontSize: 21 }}>
+                📚 Vocabular
+                <div style={{ fontSize: 15, fontWeight: 700, opacity: 0.85, marginTop: 3 }}>
+                  {nrFavVocab > 0 ? `Top 500 cuvinte · ⭐ ${nrFavVocab} de învățat` : "Top 500 cuvinte + Favorite"}
+                </div>
               </BtnMare>
               <BtnMare onClick={() => setEcran("ghid")} culoare={C.coral} stil={{ minHeight: 80, fontSize: 21 }}>
                 📖 Ghid rapid
@@ -2459,6 +2476,63 @@ export default function App() {
                     </div>
                     <div style={{ fontSize: 22, color: C.textSecundar }}>›</div>
                   </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ---------- VOCABULAR: TOP 500 CUVINTE ---------- */}
+        {ecran === "vocabular" && (() => {
+          const q = normalizeaza(cautaVocab.trim());
+          let lista = VOCABULAR_500;
+          if (vocFiltru === "favorite") lista = lista.filter((w) => favVocab[w.en]);
+          if (q) lista = lista.filter((w) => normalizeaza(w.en).includes(q) || normalizeaza(w.ro).includes(q));
+
+          const tab = (id, eticheta) => (
+            <button
+              onClick={() => setVocFiltru(id)}
+              style={{
+                flex: 1, minHeight: 46, borderRadius: 12, border: "none", cursor: "pointer",
+                fontFamily: fN, fontWeight: 800, fontSize: 15,
+                background: vocFiltru === id ? C.cerneala : C.hartie,
+                color: vocFiltru === id ? "#fff" : C.textSecundar,
+                boxShadow: vocFiltru === id ? "none" : "0 2px 6px rgba(15,109,116,0.06)",
+              }}
+            >
+              {eticheta}
+            </button>
+          );
+
+          return (
+            <div>
+              <Antet titlu="Vocabular 📚" inapoi={inapoiAcasa} />
+              <div style={{ fontFamily: fN, fontSize: 14, color: C.textSecundar, fontWeight: 700, margin: "0 0 12px 4px" }}>
+                Cele mai folosite 500 de cuvinte. Ascultă-le, pune stea ⭐ pe cele de învățat, iar când le știi scoate-le și adaugă altele.
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                {tab("toate", `Toate (500)`)}
+                {tab("favorite", `⭐ Favoritele mele${nrFavVocab ? ` (${nrFavVocab})` : ""}`)}
+              </div>
+              <input
+                value={cautaVocab}
+                onChange={(e) => setCautaVocab(e.target.value)}
+                placeholder="Caută un cuvânt (în engleză sau română)…"
+                style={{ width: "100%", boxSizing: "border-box", minHeight: 52, borderRadius: 14, border: "2px solid #D6E7E8", padding: "0 16px", fontFamily: fN, fontWeight: 700, fontSize: 16, color: C.cerneala, background: C.hartie, outline: "none", marginBottom: 14 }}
+              />
+              {vocFiltru === "favorite" && lista.length === 0 && !q && (
+                <div style={{ background: C.hartie, borderRadius: 16, padding: "22px 18px", textAlign: "center", fontFamily: fN, fontWeight: 700, fontSize: 15, color: C.textSecundar, boxShadow: "0 2px 8px rgba(15,109,116,0.07)" }}>
+                  Încă n-ai favorite. Mergi la „Toate" și apasă steaua ☆ pe cuvintele pe care vrei să le înveți. ⭐
+                </div>
+              )}
+              {q && lista.length === 0 && (
+                <div style={{ fontFamily: fN, fontWeight: 700, fontSize: 15, color: C.textSecundar, textAlign: "center", padding: "18px 0" }}>
+                  Niciun cuvânt găsit pentru „{cautaVocab}".
+                </div>
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {lista.map((w) => (
+                  <FrazaRand key={w.en} f={w} esteStea={!!favVocab[w.en]} peStea={peSteaVocab} />
                 ))}
               </div>
             </div>
